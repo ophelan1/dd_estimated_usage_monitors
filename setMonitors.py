@@ -25,12 +25,11 @@ from datetime import datetime
 from dateutil.relativedelta import relativedelta
 import time
 
-### Global Variables and Function Definitions #####
-# First, set the global Configuration
-configuration = Configuration()
-
+##############################
+### Function Definitions #####
+##############################
 # Function to create an estimated usage monitor given the metric name
-def my_function(metric_name, global_config):
+def create_monitor(metric_name, global_config):
 
     body = Monitor(
         name="Estimated Usage - "+metric_name,
@@ -44,7 +43,6 @@ def my_function(metric_name, global_config):
         ]
     )
 
-
     with ApiClient(global_config) as api_client:
         api_instance = MonitorsApi(api_client)
         response = api_instance.create_monitor(body=body)
@@ -52,35 +50,59 @@ def my_function(metric_name, global_config):
         print(response)
 
 
+# Function to get the list of estimated usage metrics
+def get_est_metrics(global_config):
+    metric_list = []
+    with ApiClient(configuration) as api_client:
+        api_instance = MetricsApi(api_client)
+        response = api_instance.list_active_metrics(
+            _from=int(time.time()),
+        )
+
+        for metric in response.metrics:
+            # Fill the array with estimated_usage metrics
+            if "datadog.estimated_usage" in metric:
+                metric_list.append(metric)
+    
+    return metric_list
+
+# Function to get the most recent values of a metric
+def get_metric_values(global_config, metric):
+    with ApiClient(configuration) as api_client:
+        api_instance = MetricsApi(api_client)
+
+        response = api_instance.query_metrics(
+            _from=int((datetime.now() + relativedelta(minutes=-30)).timestamp()),
+            to=int(datetime.now().timestamp()),
+            query=metric+"{*}",
+        )
+
+    return (response.series[0].pointlist)
+
+##############################
+### Global Variables #########
+##############################
+configuration = Configuration()
+time_window=30
+
+
 # This section gets all metrics, and adds those with "datadog.estiamted_usage" in the name to the list "estimated_usage_metrics"
-estimated_usage_metrics = []
-with ApiClient(configuration) as api_client:
-    api_instance = MetricsApi(api_client)
-    response = api_instance.list_active_metrics(
-        _from=int(time.time()),
-    )
+estimated_usage_metrics = get_est_metrics(configuration)
+print("Done Getting Existing Metrics")
 
-    for metric in response.metrics:
-        
-        # Create an Array of the estimated_usage metrics
-        if "datadog.estimated_usage" in metric:
-            print("Metric Name: "+metric)
-            estimated_usage_metrics.append(metric)
+# This section gets sample values for each metric
+for metric in estimated_usage_metrics:
+    metric_values=get_metric_values(configuration, metric)
+    print(metric_values)
+    for value in metric_values:
+        print(value.value[1])
+    print("Done Getting Metric Values for: "+metric)
 
-            # Get the last few values from the metric
-            response = api_instance.query_metrics(
-                _from=int((datetime.now() + relativedelta(minutes=-30)).timestamp()),
-                to=int(datetime.now().timestamp()),
-                query=metric+"{*}",
-            )
 
-            print("Metric Value: ")
-            print(response.series[0].pointlist)
 
-            break
 
 
 # This section goes through estimated_usage_metrics and creates a monitor for each metric            
 #for metric in estimated_usage_metrics:
-#    my_function(metric, configuration)
+#    create_monitor(metric, configuration)
 #    break
