@@ -21,6 +21,8 @@ from datadog_api_client.v1.model.monitor_formula_and_function_events_data_source
 from datadog_api_client.v1.model.monitor_options import MonitorOptions
 from datadog_api_client.v1.model.monitor_thresholds import MonitorThresholds
 from datadog_api_client.v1.model.monitor_type import MonitorType
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 import time
 
 ### Global Variables and Function Definitions #####
@@ -33,13 +35,13 @@ def my_function(metric_name, global_config):
     body = Monitor(
         name="Estimated Usage - "+metric_name,
         type=MonitorType.QUERY_ALERT,
-        query="avg(last_30m):outliers(avg:system.cpu.user{role:es-events-data} by {host}, 'dbscan', 7) > 0",
+        # query="avg(last_30m):outliers(avg:datadog.estimated_usage.sds.scanned_bytes{role:es-events-data} by {host}, 'dbscan', 7) > 0",
+        query="avg(last_4h):anomalies(avg:datadog.estimated_usage.sds.scanned_bytes{*}, 'agile', 2, direction='above', interval=60, alert_window='last_10m', count_default_zero='true', seasonality='hourly') >= 0.75",
         message="test_message",
         tags=[
-            "test:examplemonitor",
+            "monitor_type:estimated_usage",
             "env:dev",
-        ],
-        priority=3
+        ]
     )
 
 
@@ -59,11 +61,26 @@ with ApiClient(configuration) as api_client:
     )
 
     for metric in response.metrics:
+        
+        # Create an Array of the estimated_usage metrics
         if "datadog.estimated_usage" in metric:
+            print("Metric Name: "+metric)
             estimated_usage_metrics.append(metric)
+
+            # Get the last few values from the metric
+            response = api_instance.query_metrics(
+                _from=int((datetime.now() + relativedelta(minutes=-30)).timestamp()),
+                to=int(datetime.now().timestamp()),
+                query=metric+"{*}",
+            )
+
+            print("Metric Value: ")
+            print(response.series[0].pointlist)
+
+            break
 
 
 # This section goes through estimated_usage_metrics and creates a monitor for each metric            
-for metric in estimated_usage_metrics:
-    my_function(metric, configuration)
-    break
+#for metric in estimated_usage_metrics:
+#    my_function(metric, configuration)
+#    break
