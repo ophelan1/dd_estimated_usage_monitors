@@ -28,8 +28,10 @@ import time
 ##############################
 ### Function Definitions #####
 ##############################
-# Function to create an estimated usage monitor given the metric name
-def create_monitor(metric_name, global_config):
+
+
+# Function to create an estimated usage anomaly monitor given the metric name
+def create_anomaly_monitor(metric_name, global_config):
 
     body = Monitor(
         name="Estimated Usage - "+metric_name,
@@ -50,6 +52,30 @@ def create_monitor(metric_name, global_config):
         print(response)
 
 
+
+# Function to create an estimated usage threshold monitor given the metric name, time window, and user-defined threshold
+def create_threshold_monitor(metric_name, global_config, window, threshold):
+
+    body = Monitor(
+        name="Estimated Usage - "+metric_name[24:],
+        type=MonitorType.QUERY_ALERT,
+        query="avg(last_"+str(window)+"m):"+metric_name+"{*} > "+str(threshold),
+        message="test_message",
+        tags=[
+            "monitor_type:estimated_usage",
+            "env:dev",
+        ]
+    )
+
+    with ApiClient(global_config) as api_client:
+        api_instance = MonitorsApi(api_client)
+        try:
+            response = api_instance.create_monitor(body=body)
+        except:
+            print("Failed to Create Monitor")
+
+
+
 # Function to get the list of estimated usage metrics
 def get_est_metrics(global_config):
     metric_list = []
@@ -66,13 +92,15 @@ def get_est_metrics(global_config):
     
     return metric_list
 
+
+
 # Function to get the most recent values of a metric
-def get_metric_values(global_config, metric):
+def get_metric_values(global_config, metric, window):
     with ApiClient(configuration) as api_client:
         api_instance = MetricsApi(api_client)
 
         response = api_instance.query_metrics(
-            _from=int((datetime.now() + relativedelta(minutes=-30)).timestamp()),
+            _from=int((datetime.now() + relativedelta(minutes=-240)).timestamp()),
             to=int(datetime.now().timestamp()),
             query=metric+"{*}",
         )
@@ -83,20 +111,36 @@ def get_metric_values(global_config, metric):
 ### Global Variables #########
 ##############################
 configuration = Configuration()
-time_window=30
+time_window=10
 
 
 # This section gets all metrics, and adds those with "datadog.estiamted_usage" in the name to the list "estimated_usage_metrics"
+print("The Selected Time Window Is: "+str(time_window)+ " min")
 estimated_usage_metrics = get_est_metrics(configuration)
-print("Done Getting Existing Metrics")
+print("Done Getting Existing Estimated Usage Metrics from Your Account\n")
 
 # This section gets sample values for each metric
 for metric in estimated_usage_metrics:
-    metric_values=get_metric_values(configuration, metric)
-    print(metric_values)
-    for value in metric_values:
-        print(value.value[1])
+    metric_values=get_metric_values(configuration, metric, time_window)
+    value_count = len(metric_values)
+    total = 0
+    max_value = 0
+
+    for item in metric_values:
+        total = total + item.value[1]
+        if item.value[1] > max_value: 
+            max_value = item.value[1]
+    
+    avg_value = total / value_count
+
+
     print("Done Getting Metric Values for: "+metric)
+    print("Avg Value over Last 4 Hours: " + str(avg_value))
+    print("Max Value over Last 4 Hours: " + str(max_value))
+    print("\n")
+    user_threshold = input("What would you like the threshold to be? : ") 
+    create_threshold_monitor(metric, configuration, time_window, user_threshold)
+    break
 
 
 
